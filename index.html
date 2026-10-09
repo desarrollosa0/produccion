@@ -216,8 +216,6 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid 
 
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <!-- ============================================================
   CONFIGURACIÓN: pega aquí los 2 datos de tu proyecto de Supabase
   (Supabase → Project Settings → API)
@@ -240,16 +238,19 @@ window.APP_CONFIG={
 <script>
 (function(){
 var C=window.APP_CONFIG||{},G=function(i){return document.getElementById(i)},msg=function(t){G("lgm").textContent=t||""};
-var okCfg=C.SUPABASE_URL&&C.SUPABASE_URL.indexOf("TU-PROYECTO")<0&&C.SUPABASE_ANON_KEY&&C.SUPABASE_ANON_KEY.indexOf("TU_CLAVE")<0;
+var SU=String(C.SUPABASE_URL||"").trim(),SK=String(C.SUPABASE_ANON_KEY||"").trim().replace(/^["']|["']$/g,"");try{SU=new URL(SU).origin}catch(e){SU=""}
+var okCfg=SU&&/^https:/.test(SU)&&SU.indexOf("TU-PROYECTO")<0&&SK&&SK.indexOf("TU_CLAVE")<0;
+var lk=document.createElement('link');lk.rel='preconnect';lk.href=SU;document.head.appendChild(lk);
 var resolveAuth,authReady=new Promise(function(r){resolveAuth=r});
-if(!okCfg||!window.supabase){msg(!okCfg?"Falta configurar SUPABASE_URL y SUPABASE_ANON_KEY al inicio de este archivo.":"No se pudo cargar Supabase. Revisa tu conexión a internet.");G("lgf").querySelector("button").disabled=true;
+if(!okCfg||!window.supabase){msg(!okCfg?"Falta configurar o es inválida la SUPABASE_URL (debe verse como https://xxxx.supabase.co) o la SUPABASE_ANON_KEY al inicio de este archivo.":"No se pudo cargar Supabase. Revisa tu conexión a internet.");G("lgf").querySelector("button").disabled=true;
 window.claude={use:function(){return new Promise(function(){})}};return}
-var sb=window.supabase.createClient(C.SUPABASE_URL,C.SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true}});
+var sb=window.supabase.createClient(SU,SK,{auth:{persistSession:true,autoRefreshToken:true}});
 function chk(r){if(r&&r.error)throw new Error(r.error.message||String(r.error));return r}
 /* ---------- base de datos (colecciones tipo Firestore sobre la tabla docs) ---------- */
 var LS={},TM={};
 function fetchAll(c){var out=[],page=0,size=1000;return new Promise(function(res,rej){(function next(){sb.from("docs").select("id,data").eq("col",c).range(page*size,page*size+size-1).then(function(r){if(r.error)return rej(new Error(r.error.message));out=out.concat(r.data);if(r.data.length==size){page++;next()}else res(out)})})()})}
-function reload(c){if(!LS[c])return;fetchAll(c).then(function(rows){var snap={docs:rows.map(function(x){return{id:x.id,exists:true,data:function(){return x.data}}})};LS[c].forEach(function(l){try{l.cb(snap)}catch(e){console.error(e)}})},function(e){LS[c].forEach(function(l){if(l.eb)l.eb(e)})})}
+function ldOff(){var e=document.getElementById('ld');if(e)e.remove()}
+function reload(c){if(!LS[c])return;fetchAll(c).then(function(rows){if(c=='pz'||c=='pr')ldOff();var snap={docs:rows.map(function(x){return{id:x.id,exists:true,data:function(){return x.data}}})};LS[c].forEach(function(l){try{l.cb(snap)}catch(e){console.error(e)}})},function(e){LS[c].forEach(function(l){if(l.eb)l.eb(e)})})}
 function sched(c){clearTimeout(TM[c]);TM[c]=setTimeout(function(){reload(c)},250)}
 var chan=null;
 function ensureChan(){if(chan)return;chan=sb.channel("docs-all").on("postgres_changes",{event:"*",schema:"public",table:"docs"},function(p){var c=(p.new&&p.new.col)||(p.old&&p.old.path&&p.old.path.split("/")[0]);if(c)sched(c)}).subscribe()}
@@ -271,7 +272,7 @@ delete:function(id){return sb.storage.from(BK).remove([id]).then(chk)}};
 var DLx={save:function(o){return new Promise(function(res){var b=o.data instanceof Blob?o.data:new Blob([o.data]),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=o.filename||"archivo";document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(u);a.remove();res({saved:true})},1500)})}};
 window.claude={use:function(n){return authReady.then(function(){return n=="db"?DBx:n=="assets"?ASx:n=="downloads"?DLx:null})}};
 /* ---------- inicio de sesión ---------- */
-function enter(){G("lg").style.display="none";resolveAuth();
+function enter(){G("lg").style.display="none";var ld=document.createElement('div');ld.id='ld';ld.textContent='Cargando datos…';ld.style.cssText='position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:50;padding:8px 16px;border-radius:8px;background:#2563eb;color:#fff;font:14px system-ui,sans-serif';document.body.appendChild(ld);setTimeout(ldOff,20000);resolveAuth();
 var b=document.createElement("button");b.textContent="Cerrar sesión";b.style.cssText="position:fixed;right:10px;bottom:10px;z-index:20;padding:6px 10px;border-radius:6px;border:1px solid #888;background:#fff;color:#333;font-size:12px;cursor:pointer;opacity:.85";b.onclick=function(){sb.auth.signOut().then(function(){location.reload()})};document.body.appendChild(b)}
 sb.auth.getSession().then(function(r){if(r.data&&r.data.session)enter()});
 G("lgf").addEventListener("submit",function(e){e.preventDefault();msg("Entrando…");sb.auth.signInWithPassword({email:G("lge").value.trim(),password:G("lgp").value}).then(function(r){if(r.error){msg(r.error.message==="Invalid login credentials"?"Correo o contraseña incorrectos.":r.error.message);return}enter()})});
@@ -413,8 +414,8 @@ seen[k]=1;rows.push(o)}
 if(!rows.length){setMsg("El archivo no tiene filas con datos debajo del encabezado.",true);return}
 IM={name:name,rows:rows};imShow()}
 function imRead(inp){var f=inp.files&&inp.files[0];inp.value="";if(!f)return;if(!CUR){setMsg("Primero crea un proyecto.",true);return}
-if(!window.XLSX){setMsg("No se pudo cargar el lector de Excel. Revisa tu conexión y recarga.",true);return}
-var fr=new FileReader();fr.onload=function(){try{imParse(new Uint8Array(fr.result),f.name)}catch(e){setMsg("No se pudo leer el archivo: "+((e&&e.message)||e),true)}};fr.onerror=function(){setMsg("No se pudo abrir el archivo.",true)};fr.readAsArrayBuffer(f)}
+setMsg("Leyendo archivo…",false);needXl().then(function(){setMsg("",false);
+var fr=new FileReader();fr.onload=function(){try{imParse(new Uint8Array(fr.result),f.name)}catch(e){setMsg("No se pudo leer el archivo: "+((e&&e.message)||e),true)}};fr.onerror=function(){setMsg("No se pudo abrir el archivo.",true)};fr.readAsArrayBuffer(f)},function(){setMsg("No se pudo cargar el lector de Excel. Revisa tu conexión y recarga.",true)})}
 function imShow(){var R=IM,v=document.getElementById("imv");if(!R){v.innerHTML="";return}
 var ok=R.rows.filter(function(r){return!r.err}),pz=0,kg=0;ok.forEach(function(r){pz+=r.n;kg+=r.n*r.kg});var bad=R.rows.length-ok.length,def=document.getElementById("imfd").value||today(30);
 v.innerHTML='<div class="mu" style="margin:12px 0 8px">'+esc(R.name)+' · '+ok.length+' marcas listas · '+pz+' piezas · '+n2(kg)+' kg'+(bad?' · <span style="color:var(--er)">'+bad+' con problemas (no se importarán)</span>':"")+'</div>'
@@ -429,7 +430,7 @@ IMB=true;imShow();
 try{for(var i=0;i<docs.length;i+=10){setMsg("Creando piezas… "+Math.min(i+10,docs.length)+" de "+docs.length,false);await Promise.all(docs.slice(i,i+10).map(function(x){return DB.doc("pz/"+x.id).set(x.d)}))}
 IM=null;setMsg("✓ Se crearon "+docs.length+" piezas de "+ok.length+" marcas.",false)}catch(e){err(e)}
 IMB=false;imShow();render(true)}
-async function plantilla(){if(!window.XLSX){setMsg("No se pudo cargar el lector de Excel. Recarga la página.",true);return}
+async function plantilla(){try{setMsg("Preparando plantilla…",false);await needXl()}catch(e){setMsg("No se pudo cargar el lector de Excel. Revisa tu conexión y recarga.",true);return}
 var D=null;try{D=await claude.use("downloads")}catch(e){}if(!D){setMsg("La descarga de archivos no está disponible en esta vista.",true);return}
 var wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet([["MARCA","ELEMENTO","PZAS","LONG (m)","KG UNITARIOS","ARMADOR","FECHA LÍMITE"],["CM-1","Columna",3,6.5,185,"Juan Pérez","2026-12-15"],["V-7","Viga",2,4.2,96,"",""]]);
 ws["!cols"]=[{wch:12},{wch:20},{wch:8},{wch:10},{wch:14},{wch:18},{wch:14}];XLSX.utils.book_append_sheet(wb,ws,"Marcas");
@@ -445,6 +446,9 @@ function fd(ms){var d=new Date(ms);return d.getFullYear()+"-"+("0"+(d.getMonth()
 function avg(a){return a.length?a.reduce(function(x,y){return x+y},0)/a.length:null}
 function r1(x){return x==null?null:Math.round(x*10)/10}
 function san(s){return String(s).replace(/[\\\/:*?"<>|\x00-\x1f]+/g,"_").replace(/\s+/g," ").trim().slice(0,60)||"x"}
+var LIBS={pdf:"https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",xl:"https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"};
+function needPdf(){return loadLib(LIBS.pdf,function(){return window.jspdf})}
+function needXl(){return loadLib(LIBS.xl,function(){return window.XLSX})}
 function loadLib(url,test){return new Promise(function(res,rej){if(test())return res();var s=document.createElement("script");s.src=url;s.onload=function(){test()?res():rej(new Error("Biblioteca no disponible"))};s.onerror=function(){rej(new Error("No se pudo cargar "+url))};document.head.appendChild(s)})}
 function cierreUI(){var el=document.getElementById("pjact"),P=PZ(),q=S.pj.filter(function(x){return x.id==CUR})[0];if(!q){el.innerHTML="";return}
 var ready=P.length>0&&P.every(function(p){return p.em});
@@ -546,7 +550,7 @@ if(!P.length||!P.every(function(p){return p.em})){setMsg("Aún hay piezas sin fa
 if(!q.closed&&!sure("cl"+CUR)){setMsg("Pulsa otra vez «Cerrar proyecto» para confirmar. Se descargará el paquete y el proyecto quedará marcado como cerrado.",true);return}
 CLB=true;cierreUI();var D=null,id=CUR;
 try{try{D=await claude.use("downloads")}catch(e){}if(!D)throw new Error("La descarga de archivos no está disponible en esta vista.");
-setMsg("Cargando herramientas…",false);await loadLib("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js",function(){return window.JSZip});await loadLib("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js",function(){return window.ExcelJS});
+setMsg("Cargando herramientas…",false);await loadLib("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js",function(){return window.JSZip});await loadLib("https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js",function(){return window.ExcelJS});await needPdf();
 var A=analisis(),zip=new JSZip(),root=san(pjName())+"/",errs=[];setMsg("Generando Excel con gráficas…",false);
 zip.file(root+"Resumen_y_analisis_"+san(pjName())+".xlsx",await buildXlsx(A));
 A.E.forEach(function(x,i){var ps=S.pz.filter(function(p){return p.em==x.id});if(ps.length){try{zip.file(root+"Hojas_de_embarque/Embarque_"+(i+1)+"_"+san(x.ref||"sin-remision")+".pdf",buildPdf(ps,x.ref,x.fe).output("arraybuffer"))}catch(e){errs.push("PDF de embarque "+(x.ref||"")+": "+e.message)}}});
@@ -765,7 +769,7 @@ doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(100);doc.t
 var n=doc.getNumberOfPages();for(var i=1;i<=n;i++){doc.setPage(i);doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(120);doc.text("Página "+i+" de "+n,W/2,H-7,{align:"center"})}
 return doc}
 async function descargar(ps,ref,fecha){if(!ps.length){setMsg("No hay piezas en este embarque.",true);return}
-if(!window.jspdf){setMsg("No se pudo cargar el generador de PDF. Revisa tu conexión y recarga.",true);return}
+try{setMsg("Preparando PDF…",false);await needPdf()}catch(e){setMsg("No se pudo cargar el generador de PDF. Revisa tu conexión y recarga.",true);return}
 var D=null;try{D=await claude.use("downloads")}catch(e){}
 if(!D){setMsg("La descarga de archivos no está disponible en esta vista.",true);return}
 try{setMsg("Generando PDF…",false);var doc=buildPdf(ps,ref,fecha),fn="Embarque_"+((ref||"sin-remision").replace(/[^\w.-]+/g,"_"))+".pdf";
